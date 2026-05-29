@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    HIBERNATOR - AndroidManifest.xml
+    ================================
+    PRIVACY NOTICE: This app intentionally does NOT declare INTERNET permission.
+    All operations are strictly local and offline.
+
+    PERMISSIONS EXPLAINED:
+    - QUERY_ALL_PACKAGES: Required to list all installed apps. Without this,
+      on API 30+ the app cannot see other installed packages.
+    - PACKAGE_USAGE_STATS: Required for UsageStatsManager to read app usage times.
+      This is a special permission granted via Settings > Special App Access.
+    - RECEIVE_BOOT_COMPLETED: Required to restore schedules after device reboot.
+    - FOREGROUND_SERVICE: Required to run automation in foreground (visible notification).
+    - REQUEST_IGNORE_BATTERY_OPTIMIZATIONS: Required to ask the user to exclude
+      this app from Doze mode so scheduled hibernations fire reliably.
+    - BIND_ACCESSIBILITY_SERVICE: Declared implicitly via service definition.
+
+    NO INTERNET PERMISSION - By design. This app is fully offline.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- =====================================================================
+         PERMISSIONS
+         ===================================================================== -->
+
+    <!--
+        QUERY_ALL_PACKAGES
+        Needed to enumerate all installed applications on Android 11+.
+        Without this, PackageManager returns only a subset of apps.
+        Privacy note: We only read app names, icons, and package names.
+        We do NOT read app data or content.
+    -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
+    <!--
+        PACKAGE_USAGE_STATS
+        Allows reading app usage statistics via UsageStatsManager.
+        This is a "special" permission — cannot be granted at runtime.
+        User must grant it manually via Settings > Apps > Special App Access > Usage Access.
+        Privacy note: We read only timestamps and durations, never content.
+    -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!--
+        RECEIVE_BOOT_COMPLETED
+        Allows us to re-schedule WorkManager jobs after device reboot.
+        Without this, all scheduled hibernations are lost on reboot.
+    -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!--
+        FOREGROUND_SERVICE
+        Required to run the HibernationService as a foreground service.
+        This ensures the automation doesn't get killed mid-process.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!--
+        REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+        Lets us prompt the user to whitelist our app from battery optimization.
+        This ensures scheduled jobs wake up reliably even in Doze mode.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!--
+        POST_NOTIFICATIONS
+        Required on Android 13+ (API 33+) to show foreground service notification.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- INTENTIONALLY NO INTERNET PERMISSION - This app is fully offline -->
+
+    <!-- =====================================================================
+         APPLICATION
+         ===================================================================== -->
+    <application
+        android:name=".HibernatorApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Hibernator"
+        tools:targetApi="31">
+
+        <!-- =====================================================================
+             MAIN ACTIVITY
+             ===================================================================== -->
+        <activity
+            android:name=".presentation.MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Hibernator"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- =====================================================================
+             ACCESSIBILITY SERVICE
+             This is the core automation engine. It observes accessibility events
+             from Android Settings app screens and interacts ONLY with:
+             - App Info screens (com.android.settings)
+             - Force Stop button
+             - Confirmation dialogs
+
+             SECURITY: The service is scoped only to the packages and event types
+             defined in res/xml/accessibility_service_config.xml.
+             It does NOT capture text input, clipboard, or content from other apps.
+             ===================================================================== -->
+        <service
+            android:name=".accessibility.HibernatorAccessibilityService"
+            android:exported="true"
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <!-- References the XML config that scopes what this service can see -->
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <!-- =====================================================================
+             FOREGROUND SERVICE
+             Runs the hibernate automation sequence as a foreground service
+             so Android doesn't kill it mid-process.
+             ===================================================================== -->
+        <service
+            android:name=".services.HibernationForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse" />
+
+        <!-- =====================================================================
+             WORKMANAGER WORKERS
+             ===================================================================== -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup" />
+        </provider>
+
+        <!-- =====================================================================
+             BOOT RECEIVER
+             Restores scheduled hibernate jobs after device reboot.
+             ===================================================================== -->
+        <receiver
+            android:name=".workers.BootReceiver"
+            android:exported="true">
+            <intent-filter android:priority="999">
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- =====================================================================
+             QUICK SETTINGS TILE
+             Provides a quick way to trigger hibernation from the notification shade.
+             ===================================================================== -->
+        <service
+            android:name=".services.HibernatorTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_hibernate"
+            android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+    </application>
+</manifest>

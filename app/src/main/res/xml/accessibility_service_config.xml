@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    accessibility_service_config.xml
+    =================================
+    This file defines the SCOPE of what the accessibility service can observe.
+
+    SECURITY DESIGN:
+    - packageNames: We limit observation to Android Settings packages only.
+      This ensures the service CANNOT read content from other apps like
+      browsers, messaging apps, banking apps, etc.
+    - accessibilityEventTypes: We only listen for window content changes and
+      window state changes — the minimum needed to detect App Info screens.
+    - accessibilityFeedbackType: feedbackGeneric — no audio/haptic feedback.
+    - canRetrieveWindowContent: true — REQUIRED to traverse the UI tree and
+      find the Force Stop button. Without this, we cannot click the button.
+    - canPerformGestures: false — We don't need gesture simulation.
+
+    OEM PACKAGE VARIATIONS:
+    Different manufacturers use different package names for Settings:
+    - AOSP/Pixel:  com.android.settings
+    - Samsung:     com.samsung.android.settings (fallback to com.android.settings)
+    - Xiaomi/MIUI: com.android.settings (MIUI uses standard package)
+    - OnePlus:     com.android.settings
+    The service code handles OEM text differences at runtime.
+-->
+<accessibility-service
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagReportViewIds|flagRequestEnhancedWebAccessibility"
+    android:canPerformGestures="false"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/accessibility_service_description"
+    android:notificationTimeout="100"
+    android:packageNames="com.android.settings,com.samsung.android.settings,com.miui.securitycenter,com.oppo.settings,com.oneplus.settings,com.coloros.settings"
+    android:settingsActivity="com.example.hibernator.presentation.MainActivity" />
